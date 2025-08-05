@@ -1,0 +1,1 @@
+ -c -mcpu=$(MP_PROCESSOR_OPTION)      -g -D__DEBUG   -mno-eds-warn  -omf=elf -DXPRJ_default=$(CND_CONF)    $(COMPARISON_BUILD)  -I"iso14229" -O0 -msmart-io=1 -Wall -msfr-warn=off   -DUDS_TP_ISOTP_C -DUDS_SYS=UDS_SYS_CUSTOM -DUDS_LOG_LEVEL=UDS_LOG_WARN   -mdfp="${DFP_DIR}/xc16"C:\MPLAB Projects\CAN_BOOT2.X\mcc_generated_files\timer\src\sccp2.c
