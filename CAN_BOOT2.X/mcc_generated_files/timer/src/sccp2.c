@@ -221,14 +221,14 @@ void __attribute__ ((weak)) SCCP2_TimeoutCallback (void)
 
 } 
 
-void __attribute__ ( ( interrupt, no_auto_psv ) ) _CCT2Interrupt (void)
+/*void __attribute__ ( ( interrupt, no_auto_psv ) ) _CCT2Interrupt (void)
 {
     if(NULL != SCCP2_TimeoutHandler)
     {
         (*SCCP2_TimeoutHandler)();
     }
     IFS1bits.CCT2IF = 0;
-}
+}*/
 
 void SCCP2_Timer_PeriodCountSet(size_t count)
 {

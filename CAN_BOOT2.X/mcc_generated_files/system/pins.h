@@ -45,6 +45,57 @@
 
 /**
  * @ingroup  pinsdriver
+ * @brief    Sets the RE5 GPIO Pin which has a custom name of IO_RE5 to High
+ * @pre      The RE5 must be set as Output Pin             
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_SetHigh()          (_LATE5 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Sets the RE5 GPIO Pin which has a custom name of IO_RE5 to Low
+ * @pre      The RE5 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_SetLow()           (_LATE5 = 0)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Toggles the RE5 GPIO Pin which has a custom name of IO_RE5
+ * @pre      The RE5 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_Toggle()           (_LATE5 ^= 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Reads the value of the RE5 GPIO Pin which has a custom name of IO_RE5
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_GetValue()         _RE5
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE5 GPIO Pin which has a custom name of IO_RE5 as Input
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_SetDigitalInput()  (_TRISE5 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE5 GPIO Pin which has a custom name of IO_RE5 as Output
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE5_SetDigitalOutput() (_TRISE5 = 0)
+
+/**
+ * @ingroup  pinsdriver
  * @brief    Sets the RE13 GPIO Pin which has a custom name of IO_RE13 to High
  * @pre      The RE13 must be set as Output Pin             
  * @param    none
@@ -93,6 +144,57 @@
  * @return   none  
  */
 #define IO_RE13_SetDigitalOutput() (_TRISE13 = 0)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Sets the RE14 GPIO Pin which has a custom name of IO_RE14 to High
+ * @pre      The RE14 must be set as Output Pin             
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_SetHigh()          (_LATE14 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Sets the RE14 GPIO Pin which has a custom name of IO_RE14 to Low
+ * @pre      The RE14 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_SetLow()           (_LATE14 = 0)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Toggles the RE14 GPIO Pin which has a custom name of IO_RE14
+ * @pre      The RE14 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_Toggle()           (_LATE14 ^= 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Reads the value of the RE14 GPIO Pin which has a custom name of IO_RE14
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_GetValue()         _RE14
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE14 GPIO Pin which has a custom name of IO_RE14 as Input
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_SetDigitalInput()  (_TRISE14 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE14 GPIO Pin which has a custom name of IO_RE14 as Output
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE14_SetDigitalOutput() (_TRISE14 = 0)
 
 /**
  * @ingroup  pinsdriver

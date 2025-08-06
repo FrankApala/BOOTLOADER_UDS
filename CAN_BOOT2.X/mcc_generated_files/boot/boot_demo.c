@@ -60,6 +60,18 @@ static bool executionImageValid = false;
 static bool EnterBootloadMode(void);
 struct CAN_MSG_OBJ canMsg, rxMsg;
 
+#define VIN_LEN 17
+
+/* no trailing NUL?this is _binary_ data on the wire */
+//static uint8_t vin_local[VIN_LEN] = {'T','A','D','S','P','I','C','2','0','2','2','X','X','X','X','0'};
+
+
+static uint8_t vinw[VIN_LEN] = { 0 };  // mutable
+
+static uint8_t fixed_key[] = {0x12, 0x34, 0x56, 0x78};
+static uint8_t fixed_seed[]  = {0x87, 0x65, 0x43, 0x21}; // expected response to fixed_seed
+
+
 UDSServer_t server;
 UDSISOTpC_t isotp_tp;
 
@@ -72,12 +84,447 @@ const UDSISOTpCConfig_t isotp_config = {
 };
 
 
+/*==============================================================================
+ DTC 
+==============================================================================*/
+#define MAX_DTC_COUNT 10
+#define MAX_RECORDS_PER_DTC 10
 
-static UDSErr_t uds_callback(UDSServer_t *srv, UDSEvent_t evt, void *data) {
-    // printf("callback: \r\n");
-    switch (evt) {
+
+
+typedef struct {
+    uint32_t code;    // 3-byte DTC code
+    uint8_t status;   // ISO14229 status byte
+    uint8_t snapshotRecords[MAX_RECORDS_PER_DTC];
+    uint8_t numSnapshots;
+} DTCEntry_t;
+
+static DTCEntry_t dtc_list[MAX_DTC_COUNT];
+static uint8_t dtc_count = 0;
+
+void DTC_Add(uint32_t code, uint8_t status) {
+    // Check if already exists
+    for (uint8_t i = 0; i < dtc_count; i++) {
+        if (dtc_list[i].code == code) {
+            dtc_list[i].status |= status;  // Update status bits
+            return;
+        }
+    }
+
+    // Add new if space available
+    if (dtc_count < MAX_DTC_COUNT) {
+        dtc_list[dtc_count].code = code;
+        dtc_list[dtc_count].status = status;
+        
+        dtc_list[dtc_count].snapshotRecords[0] = 0x01;  // Record number 1
+        dtc_list[dtc_count].numSnapshots = 1;
+
+        dtc_count++;
+        dtc_count++;
     }
 }
+
+/*==============================================================================
+ UDS Callback
+==============================================================================*/
+enum UDSDiagnosticSessionType g_activeSession = kDefaultSession;
+static bool g_seed_generated = false;
+static bool g_key_validated = false;
+
+// === UDS Application Callback ===
+static UDSErr_t uds_callback(UDSServer_t *srv, UDSEvent_t evt, void *data) {
+    UDSErr_t ret;
+    // printf("callback: \r\n");
+    switch (evt) {
+  
+        case UDS_EVT_DiagSessCtrl:  
+       ret= uds_handle_DiagnosticSessions0x10(srv,(UDSDiagSessCtrlArgs_t *)data);
+       break;
+    
+   case UDS_EVT_EcuReset: 
+       ret= uds_handle_EcuReset(srv,(UDSECUResetArgs_t *)data);
+       break;
+   case UDS_EVT_DoScheduledReset: 
+            // Only invoked after a real reset type (01?03)
+     asm("reset");
+      break;
+      
+     
+         case UDS_EVT_ClearDiagInformation: 
+             ret= uds_handle_0x14ClearDiagnostic(srv,(UDSClearDTCArgs_t *)data);
+             break;
+
+
+    
+         
+   case UDS_EVT_ReadDTCInformation: {
+      UDSReadDTCInfoArgs_t *args =(UDSReadDTCInfoArgs_t *)data;
+        
+    uint8_t *res = srv->r.send_buf;
+
+    if (args->subFunction == 0x02) {
+        res[0] = args->subFunction;
+        uint8_t dtc_status_availability_mask = 0;
+
+    for(uint8_t i = 0; i < dtc_count; i++) {
+    dtc_status_availability_mask |= dtc_list[i].status;
+}
+
+
+        res[1] = dtc_status_availability_mask;  // DTCStatusAvailabilityMask
+        uint8_t offset = 2;
+
+        for (uint8_t i = 0; i < dtc_count; i++) {
+            if ((dtc_list[i].status & args->statusMask) != 0) {
+                if (offset + 4 > srv->r.send_buf_size) {
+                    ret= UDS_NRC_ResponseTooLong;
+                    break;
+                }
+                uint32_t code = dtc_list[i].code;
+                res[offset++] = (code >> 16) & 0xFF;
+                res[offset++] = (code >> 8) & 0xFF;
+                res[offset++] = code & 0xFF;
+                res[offset++] = dtc_list[i].status;
+            }
+        }
+
+        srv->r.send_len = offset;
+        ret= UDS_PositiveResponse;
+        break;
+    
+
+}
+    
+    if (args->subFunction == 0x04) {
+    uint8_t localRecordList[MAX_RECORDS_PER_DTC];
+    uint8_t localRecordCount = 0;
+
+    for (uint8_t i = 0; i < dtc_count; i++) {
+        for (uint8_t j = 0; j < dtc_list[i].numSnapshots; j++) {
+            uint8_t rec = dtc_list[i].snapshotRecords[j];
+            bool alreadyPresent = false;
+            for (uint8_t k = 0; k < localRecordCount; k++) {
+                if (localRecordList[k] == rec) {
+                    alreadyPresent = true;
+                    break;
+                }
+            }
+            if (!alreadyPresent) {
+                if (localRecordCount >= MAX_RECORDS_PER_DTC) {
+                    ret= UDS_NRC_ResponseTooLong; // Avoid buffer overflow                   
+                    break;
+                }
+                localRecordList[localRecordCount++] = rec;
+            }
+        }
+    }
+
+    // Build UDS response
+    if (2 + localRecordCount > srv->r.send_buf_size) {
+        ret= UDS_NRC_ResponseTooLong;
+        break;
+    }
+
+    res[0] = args->subFunction;  // 0x04 echo
+    res[1] = localRecordCount;
+    for (uint8_t i = 0; i < localRecordCount; i++) {
+        res[2 + i] = localRecordList[i];
+    }
+    srv->r.send_len = 2 + localRecordCount;
+
+    ret=UDS_PositiveResponse;
+    break;
+}
+    ret=UDS_NRC_SubFunctionNotSupported;
+    break;
+} 
+       
+      
+   
+       //return uds_handle_0x19ReadDTC(srv, (UDSReadDTCInfoArgs_t *)data);
+    
+ 
+     case UDS_EVT_ReadDataByIdent: 
+       ret= uds_handle_rdbi(srv,(UDSRDBIArgs_t *)data);
+       break;
+    
+   
+       /* case UDS_EVT_SecAccessRequestSeed :, // UDSSecAccessRequestSeedArgs_t *
+        case  UDS_EVT_SecAccessValidateKey :, // UDSSecAccessValidateKeyArgs_t **/
+   
+    case UDS_EVT_SecAccessRequestSeed:
+        ret=uds_handle_0x27requestSeed(srv,(UDSSecAccessRequestSeedArgs_t *)data);
+        break;
+           
+
+    case UDS_EVT_SecAccessValidateKey: 
+         ret=uds_handle_0x27validateKey(srv,(UDSSecAccessValidateKeyArgs_t *)data );
+         break;
+
+   /* case UDS_EVT_ReadDataByIdent: {
+       return uds_handle_rdbi(srv,(UDSRDBIArgs_t *)data);
+    }*/
+   
+   case UDS_EVT_WriteDataByIdent: 
+    ret=uds_handle_wdbi(srv,(UDSWDBIArgs_t *)data);
+    break;
+    
+        case  UDS_EVT_RoutineCtrl:
+    ret=uds_handle_routine_control(srv,(UDSRoutineCtrlArgs_t *)data);
+    break;
+    
+    
+    case UDS_EVT_RequestDownload:
+            return 0;
+            
+    case UDS_EVT_RequestUpload:        // UDSRequestUploadArgs_t *
+    case UDS_EVT_TransferData:    // UDSTransferDataArgs_t *
+    case UDS_EVT_RequestTransferExit: 
+       
+    default:
+        ret= UDS_NRC_ServiceNotSupported;
+        break;
+    
+    }
+       if (ret == UDS_PositiveResponse) {
+        srv->s3_session_timeout_timer = UDSMillis() + srv->s3_ms;
+    }
+    return ret;
+    
+    }
+
+
+
+
+/*==============================================================================
+ UDS Handles
+==============================================================================*/
+
+UDSErr_t uds_handle_DiagnosticSessions0x10(UDSServer_t *srv, UDSDiagSessCtrlArgs_t *args){
+    
+    if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+    
+   switch (args->type) {
+    case kProgrammingSession:
+        if (srv->securityLevel < 0x01) {
+            return UDS_NRC_SecurityAccessDenied;
+        }
+        srv->sessionType = kProgrammingSession;
+        srv->s3_ms = UDS_SERVER_DEFAULT_S3_MS;
+        srv->s3_session_timeout_timer = UDSMillis() + srv->s3_ms;
+        args->p2_ms = 50;
+        args->p2_star_ms = 500;
+        return UDS_PositiveResponse;
+
+    case kExtendedDiagnostic:
+    case kDefaultSession:
+    case kEngineeringDiagnostic:
+    case kProductionDiagnosticSession:
+        srv->sessionType = args->type;
+        srv->s3_ms = UDS_SERVER_DEFAULT_S3_MS;
+        srv->s3_session_timeout_timer = UDSMillis() + srv->s3_ms;
+        args->p2_ms = 50;
+        args->p2_star_ms = 500;
+        return UDS_PositiveResponse;
+
+    default:
+        return UDS_NRC_SubFunctionNotSupported;
+}   
+}
+
+
+UDSErr_t uds_handle_0x14ClearDiagnostic(UDSServer_t *srv, UDSClearDTCArgs_t *args){
+     if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+
+    if (args->groupOfDTC == 0xFFFFFF) {
+        // Clear all DTCs
+        dtc_count = 0;
+        return UDS_PositiveResponse;
+    }
+
+    return UDS_NRC_RequestOutOfRange;
+}
+
+
+
+ uds_handle_0x27requestSeed(UDSServer_t *srv, const UDSSecAccessRequestSeedArgs_t *args){
+     if (srv->sessionType != kExtendedDiagnostic ) {
+        return UDS_NRC_SubFunctionNotSupported;
+    }
+    if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+   if (args->level == 0x01) {
+       g_seed_generated = true;
+        return args->copySeed(srv, fixed_seed, sizeof(fixed_seed));
+          } else
+          {
+                return UDS_NRC_RequestOutOfRange;
+            }
+ 
+}
+
+UDSErr_t uds_handle_0x27validateKey(UDSServer_t *srv, const  UDSSecAccessValidateKeyArgs_t *args){
+      
+    if ( srv->sessionType != kExtendedDiagnostic ) {
+        return UDS_NRC_SubFunctionNotSupported;
+    }
+    
+    if (!g_seed_generated) {
+        return UDS_NRC_ConditionsNotCorrect; // 0x22
+    }
+    
+    if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+    if (args->level == 0x01 &&
+                args->len == sizeof(fixed_key) &&
+                memcmp(args->key, fixed_key, sizeof(fixed_key)) == 0) {
+                 srv->securityLevel = args->level;  // ? Grant access level
+                  g_seed_generated = false;          // ? Clear seed lock after success
+                return UDS_PositiveResponse;
+            } else {
+                return UDS_NRC_InvalidKey;
+            }
+ 
+}
+
+
+
+
+UDSErr_t uds_handle_EcuReset(UDSServer_t *srv, const UDSECUResetArgs_t *resetArgs){
+   
+    if (srv->sessionType < kProgrammingSession) {
+        return UDS_NRC_SubFunctionNotSupported;
+    }
+    if (!resetArgs) {
+        return UDS_NRC_GeneralReject;
+    }
+    
+    switch(resetArgs->type) {
+        case kHardReset:  // 0x01
+        case kKeyOffOnReset:  // 0x02
+            // For all three ?real? resets we schedule the same way:
+            srv->ecuResetScheduled = resetArgs->type;
+            srv->ecuResetTimer     = UDSMillis() + 500;  // 500 ms delay
+            return UDS_PositiveResponse;
+
+        default:
+            return UDS_NRC_SubFunctionNotSupported;
+    }
+}
+
+#define ROUTINE_ID_LED_BLINK  0x0101
+#define ROUTINE_ID_PARTITION_SWAP  0x0201
+
+static bool led_blinking = false;
+
+void start_led_blink() {
+    led_blinking = true;
+  
+    IO_RE14_Toggle();
+  
+     
+}
+
+void stop_led_blink() {
+    led_blinking = false;
+    IO_RE14_SetLow();
+}
+
+bool is_led_blinking() {
+    return led_blinking;
+}
+
+
+UDSErr_t uds_handle_routine_control(UDSServer_t *srv,const UDSRoutineCtrlArgs_t *args){
+     if (srv->sessionType != kProgrammingSession && 
+             srv->sessionType != kExtendedDiagnostic) {
+         
+        return UDS_NRC_SubFunctionNotSupported;
+    }
+     
+if (args->id == ROUTINE_ID_LED_BLINK ) {  // e.g., LED Blink routine
+        switch (args->ctrlType) {
+            case kStartRoutine:
+                start_led_blink(); // your custom logic
+                return UDS_PositiveResponse;
+
+            case kStopRoutine:
+                stop_led_blink();
+                return UDS_PositiveResponse;
+
+            case kRequestRoutineResults: {
+                uint8_t status = is_led_blinking() ? 0x01 : 0x00;
+                return args->copyStatusRecord(srv, &status, 1);
+            }
+
+            default:
+                return UDS_NRC_SubFunctionNotSupported;
+        }
+}
+     
+     if (args->id == ROUTINE_ID_PARTITION_SWAP) {
+        switch (args->ctrlType) {
+            case kStartRoutine:
+                return UDS_PositiveResponse;
+
+            default:
+                return UDS_NRC_SubFunctionNotSupported;
+        }
+    }
+
+    return UDS_NRC_RequestOutOfRange;
+}
+
+  
+UDSErr_t uds_handle_rdbi(UDSServer_t *srv, const UDSRDBIArgs_t *rdbi) {
+    if (!rdbi || !rdbi->copy || !srv) {
+        return UDS_NRC_GeneralReject;
+    }
+
+    switch(rdbi->dataId) {
+        case 0xF190: {
+            return rdbi->copy(srv, vinw, sizeof(vinw));
+        }
+         case 0xF1A0: {
+            uint8_t partition_id = (NVMCONbits.P2ACTIV) ? 2 : 1;
+            return rdbi->copy(srv, &partition_id, 1);
+        }
+        default:
+            return UDS_NRC_RequestOutOfRange;
+    }
+}
+ 
+ UDSErr_t uds_handle_wdbi(UDSServer_t *srv, const UDSWDBIArgs_t *wdbi) {
+    // only allow in programming session or above
+    if ( srv->sessionType < kProgrammingSession) {
+        return UDS_NRC_SubFunctionNotSupported;
+    }
+    if (!wdbi || !wdbi->data) {
+        return UDS_NRC_GeneralReject;
+    }
+
+    switch (wdbi->dataId) {
+        case 0xF190: {
+            // e.g. use incoming bytes as the new VIN (but must be 17 bytes)
+            if (wdbi->len != VIN_LEN) {
+                return UDS_NRC_IncorrectMessageLengthOrInvalidFormat;
+            }
+            // copy into your non-const storage
+            memcpy(vinw, wdbi->data, VIN_LEN);
+            return UDS_PositiveResponse;
+        }
+        // handle other IDs here...
+        default:
+            return UDS_NRC_RequestOutOfRange;
+    }
+}
+
 
 void BOOT_DEMO_Initialize(void)
 {    
@@ -92,12 +539,10 @@ void BOOT_DEMO_Tasks(void)
 {
      static unsigned int counter=0;
 
-     if((counter++ % 0x8000)==0){
+    if((counter++ % 0x8000)==0){
             IO_RE13_Toggle();
         }
     
- 
-        
         if (CAN1.Receive(&rxMsg)){
        // PrintCanMsgObjStruct(&rxMsg);
     // Route the frame to the appropriate ISO-TP link (physical or functional)
@@ -131,8 +576,8 @@ void BOOT_DEMO_Tasks(void)
                 inBootloadMode = true;
             }
 
-            if(inBootloadMode == false)
-            {
+         if(inBootloadMode == false)
+           {
                 /* NOTE: Return all interrupt bits to their reset state before
                  * starting an application image. DO NOT disable the global 
                  * interrupt bit. All interrupt bits must be returned to their
@@ -152,10 +597,10 @@ void BOOT_DEMO_Tasks(void)
 
                 #warning "Return device to reset state before starting the application.  Click on this warning for additional information to consider."
 				 
-                BOOT_StartApplication();
-            }
+               BOOT_StartApplication();
+           }
         }
-    }
+   }
     
    (void)BOOT_ProcessCommand();
 }

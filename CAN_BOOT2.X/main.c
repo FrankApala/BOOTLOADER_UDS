@@ -18,10 +18,16 @@
     EXCEED AMOUNT OF FEES, IF ANY, YOU PAID DIRECTLY TO MICROCHIP FOR 
     THIS SOFTWARE.
 */
+
+#define FCY 40000000UL  // Par exemple pour 40 MHz
+#include <libpic30.h>
+#include <xc.h>
+
 #include "mcc_generated_files/boot/boot_demo.h"
 #include "mcc_generated_files/system/system.h"
 #include "mcc_generated_files/can/can1.h"
 #include "mcc_generated_files/timer/sccp2.h"
+#include "mcc_generated_files/system/pins.h"
 
 /*
     Main application
@@ -35,9 +41,19 @@ static void PrintCanMsgObjStruct(struct CAN_MSG_OBJ *rxCanMsg);
 
 
 int main(void)
-{
+
+{  
     SYSTEM_Initialize();
     BOOT_DEMO_Initialize();
+    
+        for (int i = 0; i < 3; i++)
+    {
+        IO_RE14_SetHigh();
+        __delay_ms(200);
+        IO_RE14_SetLow();
+        __delay_ms(200);
+    }
+
  uint8_t txData[8] = {0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA};
 
 struct CAN_MSG_OBJ canMsg, rxMsg;
@@ -52,12 +68,15 @@ canMsg.field.formatType= CAN_2_0_FORMAT;
 canMsg.data=txData; 
 
 
- CAN1.Transmit(CAN1_TXQ, &canMsg);
-
+ 
+CAN1.Transmit(CAN1_TXQ, &canMsg);
       while(1)
+    
     {
         BOOT_DEMO_Tasks();
       }
+
+
  
     }    
 
@@ -66,12 +85,12 @@ canMsg.data=txData;
         
 volatile uint32_t system_millis=0;
 
-/*void __attribute__ ( ( interrupt, no_auto_psv ) ) _CCT2Interrupt (void)
+void __attribute__ ( ( interrupt, no_auto_psv ) ) _CCT2Interrupt (void)
 {
    
    system_millis++;
     IFS1bits.CCT2IF = 0;
-}*/
+}
 
 
 

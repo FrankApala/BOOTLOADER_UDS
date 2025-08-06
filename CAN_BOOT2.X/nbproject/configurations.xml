@@ -489,8 +489,6 @@
                   value="${memories.instruction.ram.ranges}"/>
         <property key="memories.programmemory" value="true"/>
         <property key="memories.programmemory.ranges" value="0-2beff"/>
-        <property key="programmerToGoFilePath"
-                  value="C:/MPLAB Projects/CAN_BOOT2.X/debug/default/CAN_BOOT2_ptg"/>
         <property key="programoptions.donoteraseauxmem" value="false"/>
         <property key="programoptions.eraseb4program" value="true"/>
         <property key="programoptions.pgmentry.voltage" value="low"/>

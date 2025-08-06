@@ -3,6 +3,7 @@
 
 #include "iso14229_platform_fix.h"
 #include "../mcc_generated_files/can/can1.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -237,6 +238,8 @@ typedef struct {
  * @note implementers should embed this struct at offset zero in their own transport layer handle
  */
 typedef struct UDSTp {
+    
+   
     /**
      * @brief Get the transport layer's send buffer
      * @param hdl: pointer to transport handle
@@ -301,6 +304,8 @@ typedef enum UDSEvent {
     // Server Event ----------------- Argument Type
     UDS_EVT_DiagSessCtrl,         // UDSDiagSessCtrlArgs_t *
     UDS_EVT_EcuReset,             // UDSECUResetArgs_t *
+    UDS_EVT_ReadDTCInformation,
+    UDS_EVT_ClearDiagInformation,
     UDS_EVT_ReadDataByIdent,      // UDSRDBIArgs_t *
     UDS_EVT_ReadMemByAddr,        // UDSReadMemByAddrArgs_t *
     UDS_EVT_CommCtrl,             // UDSCommCtrlArgs_t *
@@ -425,11 +430,9 @@ enum UDSDiagnosticSessionType {
     kExtendedDiagnostic = 0x03,
     kEngineeringDiagnostic = 0x04,
     kProductionDiagnosticSession =0x05,
+    kEFIDiagnosticSession=0x60,
     
 };
-
-
-
 /**
  * @brief LEV_RT_
  * @addtogroup ecuReset_0x11
@@ -990,6 +993,18 @@ typedef struct {
                             uint16_t len); /*! function for copying response data (optional) */
 } UDSCustomArgs_t;
 
+
+//I Added this functions
+typedef struct {
+   const uint8_t subFunction;
+   const uint8_t statusMask;
+} UDSReadDTCInfoArgs_t;
+
+typedef struct {
+    uint32_t groupOfDTC;  // Optional DTC group (ISO-14229 allows 3-byte DTC group IDs)
+} UDSClearDTCArgs_t;
+
+
 UDSErr_t UDSServerInit(UDSServer_t *srv);
 void UDSServerPoll(UDSServer_t *srv);
 
@@ -1227,7 +1242,7 @@ typedef struct {
         IsoTpFlowControl      flow_control;
         IsoTpDataArray        data_array;
     } as;
-} IsoTpCanMessage;
+}__attribute__((aligned(2)))IsoTpCanMessage;
 
 /**************************************************************
  * protocol specific defines
@@ -1452,8 +1467,8 @@ typedef struct {
     UDSTp_t hdl;
     IsoTpLink phys_link;
     IsoTpLink func_link;
-    uint8_t send_buf[UDS_ISOTP_MTU];
-    uint8_t recv_buf[UDS_ISOTP_MTU];
+    uint8_t send_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
+     uint8_t recv_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
     uint32_t phys_sa, phys_ta;
     uint32_t func_sa, func_ta;
 } UDSISOTpC_t;
@@ -1483,8 +1498,8 @@ typedef struct {
     UDSTp_t hdl;
     IsoTpLink phys_link;
     IsoTpLink func_link;
-    uint8_t send_buf[UDS_ISOTP_MTU];
-    uint8_t recv_buf[UDS_ISOTP_MTU];
+    uint8_t send_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
+    uint8_t recv_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
     int fd;
     uint32_t phys_sa, phys_ta;
     uint32_t func_sa, func_ta;
@@ -1506,8 +1521,8 @@ void UDSTpISOTpCDeinit(UDSTpISOTpC_t *tp);
 
 typedef struct {
     UDSTp_t hdl;
-    uint8_t recv_buf[UDS_ISOTP_MTU];
-    uint8_t send_buf[UDS_ISOTP_MTU];
+    uint8_t recv_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
+    uint8_t send_buf[UDS_ISOTP_MTU]__attribute__((aligned(2)));
     size_t recv_len;
     UDSSDU_t recv_info;
     int phys_fd;

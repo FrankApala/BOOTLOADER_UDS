@@ -882,8 +882,8 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *srv, UDSReq_t *r) {
         return NegativeResponse(r, UDS_NRC_IncorrectMessageLengthOrInvalidFormat);
     }
 
-    uint8_t sessType = r->recv_buf[1] & 0x4F;
-
+    uint8_t sessType = r->recv_buf[1];
+    //uint8_t sessType = r->recv_buf[1] & 0x4F;
     UDSDiagSessCtrlArgs_t args = {
         .type = sessType,
         .p2_ms = UDS_CLIENT_DEFAULT_P2_MS,
@@ -903,6 +903,10 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *srv, UDSReq_t *r) {
         break;
     case kProgrammingSession:
     case kExtendedDiagnostic:
+    case kEngineeringDiagnostic:
+    case kProductionDiagnosticSession:
+    case kEFIDiagnosticSession:
+        
     default:
         srv->s3_session_timeout_timer = UDSMillis() + srv->s3_ms;
         break;
@@ -975,6 +979,8 @@ static uint8_t safe_copy(UDSServer_t *srv, const void *src, uint16_t count) {
     return UDS_NRC_ResponseTooLong;
 }
 
+
+
 static uint8_t _0x22_ReadDataByIdentifier(UDSServer_t *srv, UDSReq_t *r) {
     uint8_t numDIDs;
     uint16_t dataId = 0;
@@ -1022,6 +1028,7 @@ static uint8_t _0x22_ReadDataByIdentifier(UDSServer_t *srv, UDSReq_t *r) {
     }
     return UDS_PositiveResponse;
 }
+
 
 /**
  * @brief decode the addressAndLengthFormatIdentifier that appears in ReadMemoryByAddress (0x23),
@@ -1077,6 +1084,69 @@ static uint8_t decodeAddressAndLength(UDSReq_t *r, uint8_t *const buf, void **me
     }
     return UDS_PositiveResponse;
 }
+
+static uint8_t _0x14_ClearDiagnosticInformation(UDSServer_t *srv, UDSReq_t *r) {
+    uint8_t err;
+
+    // Check minimum length: SID (1) + 3-byte DTC group
+    if (r->recv_len < 4) {
+        return NegativeResponse(r, UDS_NRC_IncorrectMessageLengthOrInvalidFormat);
+    }
+
+    // Extract 3-byte groupOfDTC (big endian: bytes 1?3)
+    uint32_t groupOfDTC = ((uint32_t)r->recv_buf[1] << 16) |
+                          ((uint32_t)r->recv_buf[2] << 8) |
+                          ((uint32_t)r->recv_buf[3]);
+
+    // Call user application callback via EmitEvent
+    err = EmitEvent(srv, UDS_EVT_ClearDiagInformation, &groupOfDTC);
+
+    if (err != UDS_PositiveResponse) {
+        return NegativeResponse(r, err);
+    }
+
+    // Successful: respond with positive SID only
+    r->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_CLEAR_DIAGNOSTIC_INFORMATION);
+    r->send_len = 1;
+    return UDS_PositiveResponse;
+}
+
+
+static uint8_t _0x19_ReadDTCInformation(UDSServer_t *srv, UDSReq_t *r) {
+    if (!srv || !r || r->recv_len < 3) {
+        return NegativeResponse(r, UDS_NRC_IncorrectMessageLengthOrInvalidFormat);
+    }
+
+    uint8_t subFunction = r->recv_buf[1];
+    uint8_t statusMask  = r->recv_buf[2];
+
+    UDSReadDTCInfoArgs_t args = {
+        .subFunction = subFunction,
+        .statusMask  = statusMask,
+    };
+
+    // Application callback must fill send_buf and set send_len
+    uint8_t err = srv->fn(srv, UDS_EVT_ReadDTCInformation, &args);
+    if (err != UDS_PositiveResponse) {
+        return NegativeResponse(r, err);
+    }
+
+    // Verify response buffer has space
+    if (r->send_len + 1 > r->send_buf_size) {
+        return NegativeResponse(r, UDS_NRC_ResponseTooLong);
+    }
+
+    // Shift data to make room for SID
+    memmove(&r->send_buf[1], r->send_buf, r->send_len);
+    r->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_READ_DTC_INFORMATION);
+    r->send_len += 1;
+
+    return UDS_PositiveResponse;
+}
+
+
+
+
 
 static uint8_t _0x23_ReadMemoryByAddress(UDSServer_t *srv, UDSReq_t *r) {
     uint8_t ret = UDS_PositiveResponse;
@@ -1621,9 +1691,9 @@ static UDSService getServiceForSID(uint8_t sid) {
     case kSID_ECU_RESET:
         return _0x11_ECUReset;
     case kSID_CLEAR_DIAGNOSTIC_INFORMATION:
-        return NULL;
+        return _0x14_ClearDiagnosticInformation;
     case kSID_READ_DTC_INFORMATION:
-        return NULL;
+        return _0x19_ReadDTCInformation;
     case kSID_READ_DATA_BY_IDENTIFIER:
         return _0x22_ReadDataByIdentifier;
     case kSID_READ_MEMORY_BY_ADDRESS:
@@ -1806,22 +1876,46 @@ UDSErr_t UDSServerInit(UDSServer_t *srv) {
     return UDS_OK;
 }
 
+
+volatile uint8_t tab[255];
+volatile uint8_t debug_step,cpt,debug_stop;
+
+void fn_debug(uint8_t d){
+    if(cpt<255){
+   debug_step =d;
+    tab[cpt]=debug_step;
+    cpt ++;}
+    else{
+        debug_stop=1;
+    }
+}
+
+
 void UDSServerPoll(UDSServer_t *srv) {
+    fn_debug(1);
     // UDS-1-2013 Figure 38: Session Timeout (S3)
     if (kDefaultSession != srv->sessionType &&
         UDSTimeAfter(UDSMillis(), srv->s3_session_timeout_timer)) {
         EmitEvent(srv, UDS_EVT_SessionTimeout, NULL);
+        
+       fn_debug(2);
     }
-
+    
+ 
     if (srv->ecuResetScheduled && UDSTimeAfter(UDSMillis(), srv->ecuResetTimer)) {
         EmitEvent(srv, UDS_EVT_DoScheduledReset, &srv->ecuResetScheduled);
+        
+       fn_debug(3);
     }
-
+   
+    fn_debug(31);
+    
     UDSTpPoll(srv->tp);
-
+ fn_debug(4);
     UDSReq_t *r = &srv->r;
 
     if (srv->requestInProgress) {
+         fn_debug(5);
         if (srv->RCRRP) {
             // responds only if
             // 1. changed (no longer RCRRP), or
@@ -1867,6 +1961,8 @@ void UDSServerPoll(UDSServer_t *srv) {
         }
 
     } else {
+        
+      fn_debug(6);
         if (srv->notReadyToReceive) {
             return; // cannot respond to request right now
         }
@@ -1892,6 +1988,7 @@ void UDSServerPoll(UDSServer_t *srv) {
             }
         }
     }
+    fn_debug(7);
 }
 
 
@@ -1920,16 +2017,24 @@ ssize_t UDSTpGetSendBuf(struct UDSTp *hdl, uint8_t **buf) {
 }
 
 ssize_t UDSTpSend(struct UDSTp *hdl, const uint8_t *buf, ssize_t len, UDSSDU_t *info) {
-     UDS_ASSERT(hdl);
-   //UDSServerPoll(hdl);
+      //UDS_ASSERT(hdl);
+    //UDSServerPoll(hdl);
     UDS_ASSERT(hdl->send);
     return hdl->send(hdl, (uint8_t *)buf, len, info);
 }
-
+ volatile UDSTpStatus_t *p_debug;
 UDSTpStatus_t UDSTpPoll(struct UDSTp *hdl) {
+  UDSTpStatus_t  status;
+ 
     UDS_ASSERT(hdl);
     UDS_ASSERT(hdl->poll);
-    return hdl->poll(hdl);
+//    p_debug=(hdl->poll);
+    fn_debug(8);
+    
+    status=hdl->poll(hdl);
+    
+    fn_debug(9);
+    return status;
 }
 
 ssize_t UDSTpPeek(struct UDSTp *hdl, uint8_t **buf, UDSSDU_t *info) {
@@ -1970,7 +2075,6 @@ void UDSTpAckRecv(UDSTp_t *hdl) {
 #line 1 "src/util.c"
 #endif
 
-
 extern volatile uint32_t system_millis;
 #if UDS_CUSTOM_MILLIS
 #else
@@ -1990,7 +2094,9 @@ uint32_t UDSMillis(void) {
 #elif UDS_SYS == UDS_SYS_ESP32
     return esp_timer_get_time() / 1000;
  #elif UDS_SYS == UDS_SYS_C
-    return system_millis;
+   return system_millis
+;
+   
 #else
 #error "UDSMillis() undefined!"
 #endif
@@ -2075,6 +2181,8 @@ const char *UDSEvtToStr(UDSEvent_t evt) {
         MAKE_CASE(UDS_EVT_Err)
         MAKE_CASE(UDS_EVT_DiagSessCtrl)
         MAKE_CASE(UDS_EVT_EcuReset)
+        MAKE_CASE(UDS_EVT_ReadDTCInformation)
+        MAKE_CASE(UDS_EVT_ClearDiagInformation)
         MAKE_CASE(UDS_EVT_ReadDataByIdent)
         MAKE_CASE(UDS_EVT_ReadMemByAddr)
         MAKE_CASE(UDS_EVT_CommCtrl)
@@ -2136,6 +2244,7 @@ void UDS_LogSDUInternal(UDS_LogLevel_t level, const char *tag, const uint8_t *bu
 
 
 static UDSTpStatus_t tp_poll(UDSTp_t *hdl) {
+    fn_debug(10);
     UDS_ASSERT(hdl);
     UDSTpStatus_t status = 0;
     UDSISOTpC_t *impl = (UDSISOTpC_t *)hdl;
@@ -2288,6 +2397,7 @@ UDSErr_t UDSISOTpCInit(UDSISOTpC_t *tp, const UDSISOTpCConfig_t *cfg) {
     isotp_init_link(&tp->phys_link, tp->phys_sa, tp->send_buf, sizeof(tp->send_buf), tp->recv_buf,
                     sizeof(tp->recv_buf));
     isotp_init_link(&tp->func_link, tp->func_sa, tp->recv_buf, sizeof(tp->send_buf), tp->recv_buf,
+
                     sizeof(tp->recv_buf));
     return UDS_OK;
 }
@@ -3434,6 +3544,7 @@ void isotp_on_can_message(IsoTpLink *link, const uint8_t *data, uint8_t len) {
             }
 
             /* handle message */
+     
             ret = isotp_receive_single_frame(link, &message, len);
             
             if (ISOTP_RET_OK == ret) {
@@ -3662,7 +3773,9 @@ int isotp_user_send_can(const uint32_t arbitration_id,
 {
     static uint8_t local_buf[8];
     memcpy(local_buf, data, size);
-
+ if (size < 8) {
+        memset(local_buf + size, 0x00, 8 - size);
+    }
     struct CAN_MSG_OBJ canMsg;
 
     canMsg.msgId = arbitration_id;
@@ -3675,15 +3788,20 @@ int isotp_user_send_can(const uint32_t arbitration_id,
 #if ISO_TP_USER_SEND_CAN_ARG
     (void)arg; // Évite un warning si arg est inutilisé
 #endif
-    if (0 != CAN1.Transmit(CAN1_TXQ, &canMsg))
+    /*if (0 != CAN_Driver.Transmit(CAN1_TXQ, &canMsg))
          return ISOTP_RET_ERROR;
      else {
-        return ISOTP_RET_OK;
+        return ISOTP_RET_OK;}*/
+    
+enum CAN_TX_MSG_REQUEST_STATUS status =
+        CAN1.Transmit(CAN1_TXQ, &canMsg);
 
+    return (status == CAN_TX_MSG_REQUEST_SUCCESS) ? ISOTP_RET_OK
+                                                  : ISOTP_RET_ERROR;
     
 }
    
-}
+
 
 uint32_t isotp_user_get_us(void) { return UDSMillis()*1000;}
 
