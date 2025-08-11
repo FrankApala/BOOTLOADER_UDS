@@ -4,6 +4,11 @@ build/default/production/mcc_generated_files/boot/boot_demo.o: \
  mcc_generated_files/boot/boot_application_header.h \
  mcc_generated_files/boot/boot_image.h \
  mcc_generated_files/boot/boot_process.h \
+ mcc_generated_files/boot/boot_private.h \
+ mcc_generated_files/boot/../flash/flash.h \
+ mcc_generated_files/boot/../flash/flash_hardware.h \
+ mcc_generated_files/boot/../flash/flash_types.h \
+ mcc_generated_files/boot/../flash/flash_interface.h \
  mcc_generated_files/boot/../../mcc_generated_files/system/pins.h \
  mcc_generated_files/boot/../../iso14229/iso14229.h \
  mcc_generated_files/boot/../../iso14229/iso14229_platform_fix.h \
@@ -18,6 +23,16 @@ mcc_generated_files/boot/boot_application_header.h:
 mcc_generated_files/boot/boot_image.h:
 
 mcc_generated_files/boot/boot_process.h:
+
+mcc_generated_files/boot/boot_private.h:
+
+mcc_generated_files/boot/../flash/flash.h:
+
+mcc_generated_files/boot/../flash/flash_hardware.h:
+
+mcc_generated_files/boot/../flash/flash_types.h:
+
+mcc_generated_files/boot/../flash/flash_interface.h:
 
 mcc_generated_files/boot/../../mcc_generated_files/system/pins.h:
 

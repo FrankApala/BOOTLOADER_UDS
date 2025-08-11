@@ -96,6 +96,57 @@
 
 /**
  * @ingroup  pinsdriver
+ * @brief    Sets the RE9 GPIO Pin which has a custom name of IO_RE9 to High
+ * @pre      The RE9 must be set as Output Pin             
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_SetHigh()          (_LATE9 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Sets the RE9 GPIO Pin which has a custom name of IO_RE9 to Low
+ * @pre      The RE9 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_SetLow()           (_LATE9 = 0)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Toggles the RE9 GPIO Pin which has a custom name of IO_RE9
+ * @pre      The RE9 must be set as Output Pin
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_Toggle()           (_LATE9 ^= 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Reads the value of the RE9 GPIO Pin which has a custom name of IO_RE9
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_GetValue()         _RE9
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE9 GPIO Pin which has a custom name of IO_RE9 as Input
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_SetDigitalInput()  (_TRISE9 = 1)
+
+/**
+ * @ingroup  pinsdriver
+ * @brief    Configures the RE9 GPIO Pin which has a custom name of IO_RE9 as Output
+ * @param    none
+ * @return   none  
+ */
+#define IO_RE9_SetDigitalOutput() (_TRISE9 = 0)
+
+/**
+ * @ingroup  pinsdriver
  * @brief    Sets the RE13 GPIO Pin which has a custom name of IO_RE13 to High
  * @pre      The RE13 must be set as Output Pin             
  * @param    none

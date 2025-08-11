@@ -47,15 +47,23 @@
 #include "boot_application_header.h"
 #include "boot_image.h"
 #include "boot_process.h"
+#include "boot_private.h"
+
+#include "../flash/flash.h"
 #include "../../mcc_generated_files/system/pins.h"
 #include "../../iso14229/iso14229.h"
 
-#define DOWNLOADED_IMAGE    0u
+#define DOWNLOADED_IMAGE    1u
 #define EXECUTION_IMAGE     0u
 
 static bool inBootloadMode = false;
 static bool executionImageRequiresValidation = true;
 static bool executionImageValid = false;
+static uint32_t downloadAddress = 0;
+static uint32_t downloadEnd = 0;
+static const uint16_t maxDownloadBlockLen = 130u; // 128 data bytes + SID + block counter
+
+
 
 static bool EnterBootloadMode(void);
 struct CAN_MSG_OBJ canMsg, rxMsg;
@@ -273,13 +281,86 @@ static UDSErr_t uds_callback(UDSServer_t *srv, UDSEvent_t evt, void *data) {
     ret=uds_handle_routine_control(srv,(UDSRoutineCtrlArgs_t *)data);
     break;
     
-    
-    case UDS_EVT_RequestDownload:
-            return 0;
-            
-    case UDS_EVT_RequestUpload:        // UDSRequestUploadArgs_t *
-    case UDS_EVT_TransferData:    // UDSTransferDataArgs_t *
-    case UDS_EVT_RequestTransferExit: 
+    case UDS_EVT_RequestDownload: {
+        UDSRequestDownloadArgs_t *args = (UDSRequestDownloadArgs_t *)data;
+        uint32_t start = ((uint32_t)args->addr) / 2u;
+        uint32_t end = start + (args->size / 2u);
+
+        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+            ret = UDS_NRC_ConditionsNotCorrect;
+            break;
+        }
+        if ((((uintptr_t)args->addr & 1u) != 0u) || (args->size % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+            ret = UDS_NRC_RequestOutOfRange;
+            break;
+        }
+        if (!IsLegalRange(start, end)) {
+            ret = UDS_NRC_RequestOutOfRange;
+            break;
+        }
+
+        uint32_t pageBytes = BOOT_EraseSizeGet();
+        uint32_t pages = (args->size + pageBytes - 1u) / pageBytes;
+        if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+            ret = UDS_NRC_GeneralProgrammingFailure;
+            break;
+        }
+
+        downloadAddress = start;
+        downloadEnd = end;
+        executionImageValid = false;
+        args->maxNumberOfBlockLength = maxDownloadBlockLen;
+        ret = UDS_PositiveResponse;
+        break;
+    }
+
+    case UDS_EVT_TransferData: {
+        UDSTransferDataArgs_t *args = (UDSTransferDataArgs_t *)data;
+        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+            ret = UDS_NRC_ConditionsNotCorrect;
+            break;
+        }
+        if (downloadEnd == 0u) {
+            ret = UDS_NRC_RequestSequenceError;
+            break;
+        }
+        if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+            ret = UDS_NRC_RequestOutOfRange;
+            break;
+        }
+        if ((downloadAddress + (args->len / 2u)) > downloadEnd) {
+            ret = UDS_NRC_RequestOutOfRange;
+            break;
+        }
+        if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
+                             FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+            ret = UDS_NRC_GeneralProgrammingFailure;
+            break;
+        }
+        downloadAddress += (args->len / 2u);
+        ret = UDS_PositiveResponse;
+        break;
+    }
+
+    case UDS_EVT_RequestTransferExit: {
+        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+            ret = UDS_NRC_ConditionsNotCorrect;
+            break;
+        }
+        if (downloadEnd == 0u) {
+            ret = UDS_NRC_RequestSequenceError;
+            break;
+        }
+        if (downloadAddress != downloadEnd) {
+            ret = UDS_NRC_RequestOutOfRange;
+            break;
+        }
+        executionImageRequiresValidation = true;
+        downloadAddress = 0u;
+        downloadEnd = 0u;
+        ret = UDS_PositiveResponse;
+        break;
+    }
        
     default:
         ret= UDS_NRC_ServiceNotSupported;
@@ -525,6 +606,77 @@ UDSErr_t uds_handle_rdbi(UDSServer_t *srv, const UDSRDBIArgs_t *rdbi) {
     }
 }
 
+ 
+static bool IsUpdateRequired(void)
+{
+    bool downloadVersionPresent;
+    bool downloadImageValid;
+    uint32_t downloadVersion;
+
+    bool executionVersionPresent;
+    uint32_t executionVersion;
+
+    bool updateRequired = false;
+
+    executionVersionPresent = BOOT_VersionNumberGet(EXECUTION_IMAGE, &executionVersion);
+    downloadVersionPresent = BOOT_VersionNumberGet(DOWNLOADED_IMAGE, &downloadVersion);
+
+    downloadImageValid = BOOT_ImageVerify(DOWNLOADED_IMAGE);
+    executionImageValid = BOOT_ImageVerify(EXECUTION_IMAGE);
+
+    /* We don't need to validate the execution image unless we update it. */
+    executionImageRequiresValidation = false;
+
+    if(downloadImageValid == true)
+    {
+        if(executionImageValid == false)
+        {
+                /* the download image is valid and
+                 * the execution image is not valid = update. In this case we don't
+                 * care about the version numbers since the download image is the
+                 * only valid image available. */
+                updateRequired = true;
+            }
+            else
+            {
+            if(downloadVersionPresent == true )
+            {
+                if(executionVersionPresent == true)
+                {
+                    if(downloadVersion > executionVersion)
+                    {
+                        /* both images are valid, both have version numbers, and
+                         * the download has a newer version number = update */
+                        updateRequired = true;
+                    }
+                }
+                else
+                {
+                    /* both images are valid, the download has a version number,
+                     * the executable does not (legacy - thus older) = update*/
+                    updateRequired = true;
+                }
+            }
+        }
+    }
+
+    return updateRequired;
+}
+
+static void UpdateFromDownload(void)
+{
+    BOOT_CopyUnlock();
+    if( IsUpdateRequired() == true )
+    {
+        /* We've updated the application image and now it needs to be copied to the execution space.
+           It needs to be re-verified after being copied. */
+        executionImageRequiresValidation = true;
+
+        BOOT_ImageCopy(EXECUTION_IMAGE, DOWNLOADED_IMAGE);
+    }
+    BOOT_CopyLock();
+}
+
 
 void BOOT_DEMO_Initialize(void)
 {    
@@ -566,6 +718,7 @@ void BOOT_DEMO_Tasks(void)
         }
         else
         {
+               UpdateFromDownload();
             if( executionImageRequiresValidation == true )
             {
                 executionImageValid = BOOT_ImageVerify(EXECUTION_IMAGE);
@@ -611,7 +764,13 @@ static bool EnterBootloadMode(void)
  
     /* NOTE: This might be a a push button status on power up, a command from a peripheral, 
      * or whatever is specific to your boot loader implementation */    
+ // If button is pressed (RE13 low), jump to application
+    if (IO_RE9_GetValue() == 0)  
+    {
+        return false;   // Don't stay in bootloader ? run app
+    }
 
+   
     //return(IO_RE13_GetValue()==0);
     return true;
 }

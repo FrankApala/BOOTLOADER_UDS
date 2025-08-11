@@ -9,7 +9,7 @@
   "version": "1.6",
   "bootloaderEndAddressExclusive": 49152,
   "applicationStartAddress": 49152,
-  "applicationEndAddress": 178174,
+  "applicationEndAddress": 112638,
   "userIvtTableAddress": 49664,
   "interrupts": [
     {
@@ -1177,6 +1177,6 @@
   "isCodeProtectEnabled": false,
   "isAntiRollBackEnabled": false,
   "downloadStartAddress": 49152,
-  "downloadEndAddress": 178174,
+  "downloadEndAddress": 112638,
   "flashErasePageSizeInInstructions": 1024
 }
