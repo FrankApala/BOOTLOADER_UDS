@@ -38,7 +38,7 @@
 #include <stdint.h>
 #include "boot_config.h"
 
-#define DOWNLOAD_IMAGE_NUMBER 0u
+#define DOWNLOAD_IMAGE_NUMBER 1u
 #define BOOT_IMAGE_COUNT 2
 #define BOOT_IMAGE_SIZE ((unsigned long)BOOT_CONFIG_DOWNLOAD_HIGH - (unsigned long)BOOT_CONFIG_DOWNLOAD_LOW + (unsigned long)2)
 

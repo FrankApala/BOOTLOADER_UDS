@@ -48,10 +48,10 @@ struct IMAGE {
 const static struct IMAGE images[] = 
 {
     {
-        .startAddress = 0xC000
+        .startAddress = 0xD000
     },
     {
-        .startAddress = 0x1B800
+        .startAddress = 0x1C000
     },
 };
 

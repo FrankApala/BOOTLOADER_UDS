@@ -4,13 +4,13 @@
     "name": "Add New UART"
   },
   "memoryPartition": 0,
-  "applicationResetAddress": 49152,
+  "applicationResetAddress": 53248,
   "maxPayloadSize": 256,
   "version": "1.6",
-  "bootloaderEndAddressExclusive": 49152,
-  "applicationStartAddress": 49152,
-  "applicationEndAddress": 112638,
-  "userIvtTableAddress": 49664,
+  "bootloaderEndAddressExclusive": 53248,
+  "applicationStartAddress": 53248,
+  "applicationEndAddress": 114686,
+  "userIvtTableAddress": 53760,
   "interrupts": [
     {
       "name": "OscillatorFail",
@@ -1175,8 +1175,8 @@
   "verification": "Not Blank",
   "bootloaderFoscValue": 40000000,
   "isCodeProtectEnabled": false,
-  "isAntiRollBackEnabled": false,
-  "downloadStartAddress": 49152,
-  "downloadEndAddress": 112638,
+  "isAntiRollBackEnabled": true,
+  "downloadStartAddress": 114688,
+  "downloadEndAddress": 176126,
   "flashErasePageSizeInInstructions": 1024
 }

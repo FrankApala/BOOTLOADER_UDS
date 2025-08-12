@@ -217,7 +217,7 @@
    <tokenMap class="java.util.TreeMap">
       <entry>
          <key class="com.microchip.mcc.core.tokenManager.CustomKey" moduleName="16-bit Bootloader" name="state"/>
-         <value>{&quot;bootloaderEndAddress&quot;:49152,&quot;commProtocol&quot;:{&quot;name&quot;:&quot;Add New UART&quot;,&quot;libraryName&quot;:&quot;Driver&quot;,&quot;id&quot;:&quot;{\&quot;providerId\&quot;:\&quot;module92\&quot;,\&quot;exportId\&quot;:\&quot;uart_basic_drv_interface\&quot;}&quot;},&quot;feature&quot;:{&quot;implementChecksum&quot;:true},&quot;interrupts&quot;:{&quot;software&quot;:[{&quot;vectorNumber&quot;:24,&quot;mappingOption&quot;:&quot;KEEP_IN_BOOTLOADER&quot;,&quot;name&quot;:&quot;CCT2Interrupt&quot;,&quot;isTrap&quot;:false,&quot;isImplemented&quot;:true}],&quot;traps&quot;:[]},&quot;applicationImageConfiguration&quot;:{&quot;imageCount&quot;:2,&quot;downloadImage&quot;:0},&quot;demoOptions&quot;:{&quot;antiRollBack&quot;:true}}</value>
+         <value>{&quot;bootloaderEndAddress&quot;:53248,&quot;commProtocol&quot;:{&quot;name&quot;:&quot;Add New UART&quot;,&quot;libraryName&quot;:&quot;Driver&quot;,&quot;id&quot;:&quot;{\&quot;providerId\&quot;:\&quot;module92\&quot;,\&quot;exportId\&quot;:\&quot;uart_basic_drv_interface\&quot;}&quot;},&quot;feature&quot;:{&quot;implementChecksum&quot;:true},&quot;interrupts&quot;:{&quot;software&quot;:[{&quot;vectorNumber&quot;:24,&quot;mappingOption&quot;:&quot;KEEP_IN_BOOTLOADER&quot;,&quot;name&quot;:&quot;CCT2Interrupt&quot;,&quot;isTrap&quot;:false,&quot;isImplemented&quot;:true}],&quot;traps&quot;:[]},&quot;applicationImageConfiguration&quot;:{&quot;imageCount&quot;:2,&quot;downloadImage&quot;:1},&quot;demoOptions&quot;:{&quot;antiRollBack&quot;:true}}</value>
       </entry>
       <entry>
          <key class="com.microchip.mcc.core.tokenManager.CustomKey" moduleName="Application Builder" name="state"/>
@@ -239,11 +239,11 @@
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_config.h</file>
-         <hash>a69b80b1b0c2d64c327153ee9f72b1b29bbb5b1d9f16277b2c6ee61832d27c0c</hash>
+         <hash>d83cb5254a6df782ade197778e4ffbaa6515fd56e98d5f11ccb8cfdbeea1d759</hash>
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_demo.c</file>
-         <hash>5f11247088240cd9ee2f0b272f9beb1e8819a9a42cb6466b6830774a4ef72ce9</hash>
+         <hash>2b0a0c18ecc89596c3cf7767d75fc677000424b6b35ded2171335c4e4d14b4cc</hash>
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_demo.h</file>
@@ -251,11 +251,11 @@
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_image.c</file>
-         <hash>c2e6961b4754bbc9ada62a589ab8a37dac0baa9f7122cba38b188c841ff135b2</hash>
+         <hash>0c952d435a8c386260fadb40aa45a92fe377e3c0921383bab32f34a671330016</hash>
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_image.h</file>
-         <hash>450bac1c746e5d75c8ca13bf90615cd00282cc7a64062d95a12f8b2b7f6b75ed</hash>
+         <hash>00cf34233e6ef9cd3e274ab51efebebb1c565965a46c66eb11831a44cc2638cd</hash>
       </entry>
       <entry>
          <file>mcc_generated_files\boot\boot_private.h</file>
@@ -283,7 +283,7 @@
       </entry>
       <entry>
          <file>mcc_generated_files\boot\contract.json</file>
-         <hash>661e6a33d1800a640209ad0e0a480546755b7fd8270aed7d9dc854dcf4bf744c</hash>
+         <hash>2a38c9f75c885bee3863cf54599b667fcbd95739855636723481903c1e069564</hash>
       </entry>
       <entry>
          <file>mcc_generated_files\boot\hardware_interrupt_table.S</file>

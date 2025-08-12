@@ -281,86 +281,18 @@ static UDSErr_t uds_callback(UDSServer_t *srv, UDSEvent_t evt, void *data) {
     ret=uds_handle_routine_control(srv,(UDSRoutineCtrlArgs_t *)data);
     break;
     
-    case UDS_EVT_RequestDownload: {
-        UDSRequestDownloadArgs_t *args = (UDSRequestDownloadArgs_t *)data;
-        uint32_t start = ((uint32_t)args->addr) / 2u;
-        uint32_t end = start + (args->size / 2u);
-
-        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
-            ret = UDS_NRC_ConditionsNotCorrect;
-            break;
-        }
-        if ((((uintptr_t)args->addr & 1u) != 0u) || (args->size % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
-            ret = UDS_NRC_RequestOutOfRange;
-            break;
-        }
-        if (!IsLegalRange(start, end)) {
-            ret = UDS_NRC_RequestOutOfRange;
-            break;
-        }
-
-        uint32_t pageBytes = BOOT_EraseSizeGet();
-        uint32_t pages = (args->size + pageBytes - 1u) / pageBytes;
-        if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-            ret = UDS_NRC_GeneralProgrammingFailure;
-            break;
-        }
-
-        downloadAddress = start;
-        downloadEnd = end;
-        executionImageValid = false;
-        args->maxNumberOfBlockLength = maxDownloadBlockLen;
-        ret = UDS_PositiveResponse;
+    case UDS_EVT_RequestDownload: 
+        ret = uds_handle_RequestDownload(srv, (UDSRequestDownloadArgs_t *)data);
         break;
-    }
-
-    case UDS_EVT_TransferData: {
-        UDSTransferDataArgs_t *args = (UDSTransferDataArgs_t *)data;
-        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
-            ret = UDS_NRC_ConditionsNotCorrect;
-            break;
-        }
-        if (downloadEnd == 0u) {
-            ret = UDS_NRC_RequestSequenceError;
-            break;
-        }
-        if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
-            ret = UDS_NRC_RequestOutOfRange;
-            break;
-        }
-        if ((downloadAddress + (args->len / 2u)) > downloadEnd) {
-            ret = UDS_NRC_RequestOutOfRange;
-            break;
-        }
-        if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
-                             FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-            ret = UDS_NRC_GeneralProgrammingFailure;
-            break;
-        }
-        downloadAddress += (args->len / 2u);
-        ret = UDS_PositiveResponse;
+    case UDS_EVT_TransferData: 
+        ret = uds_handle_TransferData(srv, (UDSTransferDataArgs_t *)data);
         break;
-    }
 
-    case UDS_EVT_RequestTransferExit: {
-        if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
-            ret = UDS_NRC_ConditionsNotCorrect;
-            break;
-        }
-        if (downloadEnd == 0u) {
-            ret = UDS_NRC_RequestSequenceError;
-            break;
-        }
-        if (downloadAddress != downloadEnd) {
-            ret = UDS_NRC_RequestOutOfRange;
-            break;
-        }
-        executionImageRequiresValidation = true;
-        downloadAddress = 0u;
-        downloadEnd = 0u;
-        ret = UDS_PositiveResponse;
+    case UDS_EVT_RequestTransferExit: 
+         ret = uds_handle_RequestTransferExit(srv, (UDSRequestTransferExitArgs_t *)data);
         break;
-    }
+    
+       
        
     default:
         ret= UDS_NRC_ServiceNotSupported;
@@ -380,6 +312,82 @@ static UDSErr_t uds_callback(UDSServer_t *srv, UDSEvent_t evt, void *data) {
 /*==============================================================================
  UDS Handles
 ==============================================================================*/
+UDSErr_t uds_handle_RequestDownload(UDSServer_t *srv, UDSRequestDownloadArgs_t *args){
+
+    if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+  /*  if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+        return UDS_NRC_ConditionsNotCorrect;
+    }*/
+
+    uint32_t start = ((uint32_t)args->addr) / 2u;
+    uint32_t end = start + (args->size / 2u);
+
+    if ((((uintptr_t)args->addr & 1u) != 0u) || (args->size % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+    if (!IsLegalRange(start, end)) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+
+    uint32_t pageBytes = BOOT_EraseSizeGet();
+    uint32_t pages = (args->size + pageBytes - 1u) / pageBytes;
+    if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+        return UDS_NRC_GeneralProgrammingFailure;
+    }
+
+    downloadAddress = start;
+    downloadEnd = end;
+    executionImageValid = false;
+    args->maxNumberOfBlockLength = maxDownloadBlockLen;
+    return UDS_PositiveResponse;
+}
+
+UDSErr_t uds_handle_TransferData(UDSServer_t *srv, UDSTransferDataArgs_t *args){
+
+    if (!args) {
+        return UDS_NRC_GeneralReject;
+    }
+    /*if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+        return UDS_NRC_ConditionsNotCorrect;
+    }*/
+    if (downloadEnd == 0u) {
+        return UDS_NRC_RequestSequenceError;
+    }
+    if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+    if ((downloadAddress + (args->len / 2u)) > downloadEnd) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+    if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
+                         FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+        return UDS_NRC_GeneralProgrammingFailure;
+    }
+    downloadAddress += (args->len / 2u);
+    return UDS_PositiveResponse;
+}
+
+UDSErr_t uds_handle_RequestTransferExit(UDSServer_t *srv, UDSRequestTransferExitArgs_t *args){
+    (void)args;
+
+    /*if (srv->sessionType != kProgrammingSession || srv->securityLevel < 0x01) {
+        return UDS_NRC_ConditionsNotCorrect;
+    }*/
+    if (downloadEnd == 0u) {
+        return UDS_NRC_RequestSequenceError;
+    }
+    if (downloadAddress != downloadEnd) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+
+    executionImageRequiresValidation = true;
+    downloadAddress = 0u;
+    downloadEnd = 0u;
+    return UDS_PositiveResponse;
+}
+
 
 UDSErr_t uds_handle_DiagnosticSessions0x10(UDSServer_t *srv, UDSDiagSessCtrlArgs_t *args){
     
@@ -520,6 +528,20 @@ void stop_led_blink() {
 bool is_led_blinking() {
     return led_blinking;
 }
+static void SwitchActivePartition(UDSServer_t *srv, uint8_t partitionId)
+{
+    if (partitionId == 2u)
+    {
+        NVMCONbits.P2ACTIV = 1;
+    }
+    else
+    {
+        NVMCONbits.P2ACTIV = 0;
+    }
+
+    srv->ecuResetScheduled = kHardReset;
+    srv->ecuResetTimer = UDSMillis() + 100;
+}
 
 
 UDSErr_t uds_handle_routine_control(UDSServer_t *srv,const UDSRoutineCtrlArgs_t *args){
@@ -549,18 +571,29 @@ if (args->id == ROUTINE_ID_LED_BLINK ) {  // e.g., LED Blink routine
         }
 }
      
-     if (args->id == ROUTINE_ID_PARTITION_SWAP) {
-        switch (args->ctrlType) {
-            case kStartRoutine:
-                return UDS_PositiveResponse;
-
-            default:
-                return UDS_NRC_SubFunctionNotSupported;
+      if (args->id == ROUTINE_ID_PARTITION_SWAP) {
+        if (args->ctrlType != kStartRoutine)
+        {
+            return UDS_NRC_SubFunctionNotSupported;
         }
+         if (!args->optionRecord || args->len < 1)
+        {
+            return UDS_NRC_IncorrectMessageLengthOrInvalidFormat;
+        }
+        
+    uint8_t newPart = args->optionRecord[0];
+        if (newPart != 1u && newPart != 2u)
+        {
+            return UDS_NRC_RequestOutOfRange;
+        }
+
+        SwitchActivePartition(srv, newPart);
+        return UDS_PositiveResponse;
     }
 
     return UDS_NRC_RequestOutOfRange;
 }
+
 
   
 UDSErr_t uds_handle_rdbi(UDSServer_t *srv, const UDSRDBIArgs_t *rdbi) {
@@ -598,6 +631,17 @@ UDSErr_t uds_handle_rdbi(UDSServer_t *srv, const UDSRDBIArgs_t *rdbi) {
             }
             // copy into your non-const storage
             memcpy(vinw, wdbi->data, VIN_LEN);
+            return UDS_PositiveResponse;
+        }
+        case 0xF1A0: {
+            if (wdbi->len != 1) {
+                return UDS_NRC_IncorrectMessageLengthOrInvalidFormat;
+            }
+            uint8_t newPart = wdbi->data[0];
+            if (newPart != 1u && newPart != 2u) {
+                return UDS_NRC_RequestOutOfRange;
+            }
+            SwitchActivePartition(srv, newPart);
             return UDS_PositiveResponse;
         }
         // handle other IDs here...
