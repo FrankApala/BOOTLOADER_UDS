@@ -325,12 +325,26 @@ UDSErr_t uds_handle_RequestDownload(UDSServer_t *srv, UDSRequestDownloadArgs_t *
         return UDS_NRC_ConditionsNotCorrect;
     }*/
 
-    // Accept data for a simple RAM buffer; ignore supplied address
-    if (args->size > DOWNLOAD_BUFFER_SIZE) {
+    uint32_t start = (uint32_t)args->addr;
+    uint32_t end   = start + args->size;
+    uint32_t pages;
+
+    if (!IsLegalRange(start, end)) {
         return UDS_NRC_RequestOutOfRange;
     }
-    downloadAddress = 0u;
-    downloadEnd = args->size;
+
+    if ((start % FLASH_ERASE_PAGE_SIZE_IN_PC_UNITS) != 0u ||
+        (end % FLASH_ERASE_PAGE_SIZE_IN_PC_UNITS) != 0u) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+
+    pages = (args->size / FLASH_ERASE_PAGE_SIZE_IN_PC_UNITS);
+    if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+        return UDS_NRC_GeneralProgrammingFailure;
+    }
+
+    downloadAddress = start;
+    downloadEnd = end;
     executionImageValid = false;
     args->maxNumberOfBlockLength = maxDownloadBlockLen;
     return UDS_PositiveResponse;
@@ -350,7 +364,13 @@ UDSErr_t uds_handle_TransferData(UDSServer_t *srv, UDSTransferDataArgs_t *args){
     if ((downloadAddress + args->len) > downloadEnd) {
         return UDS_NRC_RequestOutOfRange;
     }
-    memcpy(&downloadBuffer[downloadAddress], args->data, args->len);
+    if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+        return UDS_NRC_RequestOutOfRange;
+    }
+    if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
+                        FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
+        return UDS_NRC_GeneralProgrammingFailure;
+    }
     downloadAddress += args->len;
     return UDS_PositiveResponse;
 }
