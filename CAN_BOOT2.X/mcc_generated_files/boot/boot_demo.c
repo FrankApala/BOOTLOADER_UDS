@@ -43,6 +43,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include "boot_config.h"
 #include "boot_application_header.h"
 #include "boot_image.h"
@@ -62,6 +63,9 @@ static bool executionImageValid = false;
 static uint32_t downloadAddress = 0;
 static uint32_t downloadEnd = 0;
 static const uint16_t maxDownloadBlockLen = 130u; // 128 data bytes + SID + block counter
+// Simple buffer used for download/transfer examples
+#define DOWNLOAD_BUFFER_SIZE 1024u
+static uint8_t downloadBuffer[DOWNLOAD_BUFFER_SIZE];
 
 
 
@@ -321,24 +325,12 @@ UDSErr_t uds_handle_RequestDownload(UDSServer_t *srv, UDSRequestDownloadArgs_t *
         return UDS_NRC_ConditionsNotCorrect;
     }*/
 
-    uint32_t start = ((uint32_t)args->addr) / 2u;
-    uint32_t end = start + (args->size / 2u);
-
-    if ((((uintptr_t)args->addr & 1u) != 0u) || (args->size % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+    // Accept data for a simple RAM buffer; ignore supplied address
+    if (args->size > DOWNLOAD_BUFFER_SIZE) {
         return UDS_NRC_RequestOutOfRange;
     }
-    if (!IsLegalRange(start, end)) {
-        return UDS_NRC_RequestOutOfRange;
-    }
-
-    uint32_t pageBytes = BOOT_EraseSizeGet();
-    uint32_t pages = (args->size + pageBytes - 1u) / pageBytes;
-    if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-        return UDS_NRC_GeneralProgrammingFailure;
-    }
-
-    downloadAddress = start;
-    downloadEnd = end;
+    downloadAddress = 0u;
+    downloadEnd = args->size;
     executionImageValid = false;
     args->maxNumberOfBlockLength = maxDownloadBlockLen;
     return UDS_PositiveResponse;
@@ -355,17 +347,11 @@ UDSErr_t uds_handle_TransferData(UDSServer_t *srv, UDSTransferDataArgs_t *args){
     if (downloadEnd == 0u) {
         return UDS_NRC_RequestSequenceError;
     }
-    if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
+    if ((downloadAddress + args->len) > downloadEnd) {
         return UDS_NRC_RequestOutOfRange;
     }
-    if ((downloadAddress + (args->len / 2u)) > downloadEnd) {
-        return UDS_NRC_RequestOutOfRange;
-    }
-    if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
-                         FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-        return UDS_NRC_GeneralProgrammingFailure;
-    }
-    downloadAddress += (args->len / 2u);
+    memcpy(&downloadBuffer[downloadAddress], args->data, args->len);
+    downloadAddress += args->len;
     return UDS_PositiveResponse;
 }
 
