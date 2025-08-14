@@ -67,7 +67,18 @@ static const uint16_t maxDownloadBlockLen = 130u; // 128 data bytes + SID + bloc
 #define DOWNLOAD_BUFFER_SIZE 1024u
 static uint8_t downloadBuffer[DOWNLOAD_BUFFER_SIZE];
 
+static inline uint32_t DownloadPhysAddress(uint32_t logical)
+{
+    return BOOT_CONFIG_DOWNLOAD_LOW + (logical - BOOT_CONFIG_PROGRAMMABLE_ADDRESS_LOW);
+}
 
+static bool IsDownloadRange(uint32_t start, uint32_t end)
+{
+    uint32_t last = BOOT_CONFIG_PROGRAMMABLE_ADDRESS_LOW +
+                    (BOOT_CONFIG_DOWNLOAD_HIGH - BOOT_CONFIG_DOWNLOAD_LOW);
+    return (start >= BOOT_CONFIG_PROGRAMMABLE_ADDRESS_LOW) &&
+           ((end - 2u) <= last);
+}
 
 static bool EnterBootloadMode(void);
 struct CAN_MSG_OBJ canMsg, rxMsg;
@@ -329,7 +340,7 @@ UDSErr_t uds_handle_RequestDownload(UDSServer_t *srv, UDSRequestDownloadArgs_t *
     uint32_t end   = start + args->size;
     uint32_t pages;
 
-    if (!IsLegalRange(start, end)) {
+    if (!IsDownloadRange(start, end)) {
         return UDS_NRC_RequestOutOfRange;
     }
 
@@ -339,8 +350,12 @@ UDSErr_t uds_handle_RequestDownload(UDSServer_t *srv, UDSRequestDownloadArgs_t *
     }
 
     pages = (args->size / FLASH_ERASE_PAGE_SIZE_IN_PC_UNITS);
-    if (BOOT_BlockErase(start, pages, FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-        return UDS_NRC_GeneralProgrammingFailure;
+    for (uint32_t page = 0; page < pages; page++) {
+        uint32_t phys = DownloadPhysAddress(start +
+                             (page * FLASH_ERASE_PAGE_SIZE_IN_PC_UNITS));
+        if (FLASH_PageErase(phys, FLASH_UNLOCK_KEY) != FLASH_NO_ERROR) {
+            return UDS_NRC_GeneralProgrammingFailure;
+        }
     }
 
     downloadAddress = start;
@@ -367,9 +382,13 @@ UDSErr_t uds_handle_TransferData(UDSServer_t *srv, UDSTransferDataArgs_t *args){
     if ((args->len % MINIMUM_WRITE_BLOCK_SIZE) != 0u) {
         return UDS_NRC_RequestOutOfRange;
     }
-    if (BOOT_BlockWrite(downloadAddress, args->len, (uint8_t *)args->data,
-                        FLASH_UNLOCK_KEY) != NVM_SUCCESS) {
-        return UDS_NRC_GeneralProgrammingFailure;
+    for (uint32_t offset = 0; offset < args->len; offset += MINIMUM_WRITE_BLOCK_SIZE) {
+        uint32_t flashData[MINIMUM_WRITE_BLOCK_SIZE / sizeof(uint32_t)];
+        memcpy(flashData, &args->data[offset], MINIMUM_WRITE_BLOCK_SIZE);
+        uint32_t phys = DownloadPhysAddress(downloadAddress + (offset / 2u));
+        if (FLASH_WordWrite(phys, flashData, FLASH_UNLOCK_KEY) != FLASH_NO_ERROR) {
+            return UDS_NRC_GeneralProgrammingFailure;
+        }
     }
     downloadAddress += args->len;
     return UDS_PositiveResponse;
